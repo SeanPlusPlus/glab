@@ -1,31 +1,44 @@
 require('dotenv').config();
 const axios = require('axios');
+const { z } = require('zod');
 
-const username = process.argv[2];
-const state = process.argv[3];  // MR state (opened, merged)
-const repoIds = process.argv.slice(4, process.argv.length - (state === 'merged' ? 2 : 1)); // List of repository IDs
-const pastDate = state === 'merged' ? process.argv[process.argv.length - 2] : null; // Date filter for merged MRs
-const outputFlag = state === 'merged' ? process.argv[process.argv.length - 1] : process.argv[process.argv.length - 1]; // Flag for Markdown output
+// Define the Zod schema for validating the command-line arguments
+const argsSchema = z.object({
+  username: z.string().nonempty("Please provide a username as a command-line argument."),
+  state: z.enum(['opened', 'merged'], {
+    errorMap: () => ({ message: 'Please provide a valid MR state ("opened" or "merged") as a command-line argument.' })
+  }),
+  repoIds: z.array(z.string().nonempty(), {
+    errorMap: () => ({ message: 'Please provide at least one repository ID as a command-line argument.' })
+  }).min(1),
+  pastDate: z.string().optional().refine(date => {
+    if (date) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(date);
+    }
+    return true;
+  }, {
+    message: 'Please provide a past date in the format YYYY-MM-DD to filter merged requests.',
+  }),
+});
 
-if (!username) {
-  console.error('Please provide a username as a command-line argument.');
+// Parse the command-line arguments
+const args = {
+  username: process.argv[2],
+  state: process.argv[3],
+  repoIds: process.argv.slice(4, process.argv.length - (process.argv[3] === 'merged' ? 2 : 1)),
+  pastDate: process.argv[3] === 'merged' ? process.argv[process.argv.length - 2] : undefined,
+};
+
+try {
+  argsSchema.parse(args);
+} catch (e) {
+  console.error(e.errors.map(err => err.message).join('\n'));
   process.exit(1);
 }
 
-if (!state || !['opened', 'merged'].includes(state)) {
-  console.error('Please provide a valid MR state ("opened" or "merged") as a command-line argument.');
-  process.exit(1);
-}
+const { username, state, repoIds, pastDate } = args;
+const outputFlag = process.argv[process.argv.length - 1];
 
-if (repoIds.length === 0) {
-  console.error('Please provide at least one repository ID as a command-line argument.');
-  process.exit(1);
-}
-
-if (state === 'merged' && !pastDate) {
-  console.error('Please provide a past date in the format YYYY-MM-DD to filter merged requests.');
-  process.exit(1);
-}
 
 const gitlabUrl = process.env.GITLAB_URL;
 const personalAccessToken = process.env.GITLAB_PERSONAL_ACCESS_TOKEN;
