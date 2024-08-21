@@ -1,13 +1,22 @@
+require('dotenv').config(); // Load environment variables from .env file
 const axios = require('axios');
 
-// Replace these with your GitLab instance URL and your personal access token
-const gitlabUrl = 'https://gitlab.com';  // Replace with your GitLab instance URL
-const personalAccessToken = 'your_access_token';  // Replace with your GitLab personal access token
-const username = 'specific_user';  // Replace with the username you want to query
+// Get the username from command-line arguments
+const username = process.argv[2];  // The third argument is the username
+
+if (!username) {
+  console.error('Please provide a username as a command-line argument.');
+  process.exit(1);  // Exit the script with an error code
+}
+
+const gitlabUrl = process.env.GITLAB_URL;  // Load GitLab URL from environment variables
+const personalAccessToken = process.env.GITLAB_PERSONAL_ACCESS_TOKEN; // Load access token from environment variables
 
 async function getOpenMergeRequests() {
+  let userId;
+
+  // Get User ID
   try {
-    // Make a request to the GitLab API to get the user ID based on the username
     const userResponse = await axios.get(`${gitlabUrl}/api/v4/users?username=${username}`, {
       headers: {
         'PRIVATE-TOKEN': personalAccessToken,
@@ -19,9 +28,14 @@ async function getOpenMergeRequests() {
       return;
     }
 
-    const userId = userResponse.data[0].id;
+    userId = userResponse.data[0].id;
+  } catch (error) {
+    console.error('Error fetching user ID:', error.message);
+    return; // Exit the function if the user ID cannot be retrieved
+  }
 
-    // Make a request to the GitLab API to get all open MRs for the specific user
+  // Get Merge Requests
+  try {
     const mrResponse = await axios.get(`${gitlabUrl}/api/v4/merge_requests`, {
       headers: {
         'PRIVATE-TOKEN': personalAccessToken,
