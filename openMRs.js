@@ -12,9 +12,6 @@ if (!username) {
 const gitlabUrl = process.env.GITLAB_URL;  // Load GitLab URL from environment variables
 const personalAccessToken = process.env.GITLAB_PERSONAL_ACCESS_TOKEN; // Load access token from environment variables
 
-console.log('Using GitLab URL:', gitlabUrl);
-console.log('Using Personal Access Token:', personalAccessToken);  // Debugging only, remove after use
-
 async function getOpenMergeRequests() {
   let userId;
 
