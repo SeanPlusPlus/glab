@@ -44,7 +44,7 @@ async function getMergeRequestsForRepos() {
     }
 
     const userId = userResponse.data[0].id;
-    const mergeRequests = [];
+    const projectsData = {};
     const pastDateObj = pastDate ? new Date(pastDate) : null;
 
     // Loop through each repo ID and fetch MRs for the specified user
@@ -60,20 +60,21 @@ async function getMergeRequestsForRepos() {
           },
         });
 
+        const projectResponse = await axios.get(`${gitlabUrl}/api/v4/projects/${repoId}`, {
+          headers: {
+            'PRIVATE-TOKEN': personalAccessToken,
+          },
+        });
+
+        const projectName = projectResponse.data.name;
+
         const repoMergeRequests = await Promise.all(mrResponse.data.map(async (mr) => {
           if (state === 'merged' && pastDateObj && new Date(mr.merged_at) < pastDateObj) {
             return null;  // Skip MRs merged before the specified date
           }
 
-          const projectResponse = await axios.get(`${gitlabUrl}/api/v4/projects/${mr.project_id}`, {
-            headers: {
-              'PRIVATE-TOKEN': personalAccessToken,
-            },
-          });
-
           const mrData = {
             Title: `[${mr.title}](${mr.web_url})`, // Markdown link format
-            'Project Name': projectResponse.data.name,
           };
 
           if (state === 'opened') {
@@ -89,18 +90,21 @@ async function getMergeRequestsForRepos() {
           return mrData;
         }));
 
-        // Filter out any null values from the array (those that didn't meet the date condition)
-        mergeRequests.push(...repoMergeRequests.filter(Boolean));
+        // Filter out any null values and group MRs by project
+        projectsData[projectName] = repoMergeRequests.filter(Boolean);
       } catch (error) {
         console.error(`Error fetching merge requests for repo ID ${repoId}:`, error.message);
       }
     }
 
     if (outputFlag === '--md') {
-      const mdContent = generateMarkdown(mergeRequests);
+      const mdContent = generateMarkdown(projectsData);
       console.log(mdContent);
     } else {
-      console.table(mergeRequests);
+      Object.keys(projectsData).forEach(projectName => {
+        console.log(`\n${projectName}:\n`);
+        console.table(projectsData[projectName]);
+      });
     }
   } catch (error) {
     console.error('Error fetching user ID:', error.message);
@@ -110,22 +114,27 @@ async function getMergeRequestsForRepos() {
 function generateMarkdown(data) {
   let md = `# Merge Requests for ${username} (${state})\n\n`;
 
-  if (state === 'opened') {
-    md += `| Title | Project Name | Date Opened |\n`;
-    md += `|-------|--------------|-------------|\n`;
-  } else if (state === 'merged') {
-    md += `| Title | Project Name | Date Merged | Total Days Open |\n`;
-    md += `|-------|--------------|-------------|-----------------|\n`;
-  }
-
-  data.forEach(row => {
-    md += `| ${row.Title} | ${row['Project Name']} |`;
+  Object.keys(data).forEach(projectName => {
+    md += `## ${projectName} (${data[projectName].length} MRs)\n\n`;
 
     if (state === 'opened') {
-      md += ` ${row['Date Opened']} |\n`;
+      md += `| Title | Date Opened |\n`;
+      md += `|-------|-------------|\n`;
     } else if (state === 'merged') {
-      md += ` ${row['Date Merged']} | ${row['Total Days Open']} |\n`;
+      md += `| Title | Date Merged | Total Days Open |\n`;
+      md += `|-------|-------------|-----------------|\n`;
     }
+
+    data[projectName].forEach(row => {
+      md += `| ${row.Title} |`;
+      if (state === 'opened') {
+        md += ` ${row['Date Opened']} |\n`;
+      } else if (state === 'merged') {
+        md += ` ${row['Date Merged']} | ${row['Total Days Open']} |\n`;
+      }
+    });
+
+    md += `\n`;
   });
 
   return md;
